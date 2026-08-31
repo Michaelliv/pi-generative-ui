@@ -4,12 +4,20 @@
  * shell HTML document, and writes `runtime.bundle.ts` exporting the result.
  *
  * The bundle is committed so consumers don't need a build step.
+ * `prepare` still invokes this script; skip when esbuild isn't installed
+ * (e.g. `npm install --omit=dev` from `pi install` / `pi update`).
  */
-import { build } from "esbuild";
-import { readFile, writeFile } from "node:fs/promises";
+import { access, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
+
+let build;
+try {
+  ({ build } = await import("esbuild"));
+} catch (err) {
+  if (err?.code !== "ERR_MODULE_NOT_FOUND") throw err;
+}
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ENTRY = join(__dirname, "runtime", "index.ts");
@@ -26,6 +34,16 @@ async function loadSvgStyles() {
 }
 
 async function main() {
+  if (!build) {
+    try {
+      await access(OUT);
+      console.log("esbuild not installed; using committed runtime.bundle.ts");
+      return;
+    } catch {
+      throw new Error("esbuild is required to generate runtime.bundle.ts");
+    }
+  }
+
   const svgStyles = await loadSvgStyles();
 
   const result = await build({
